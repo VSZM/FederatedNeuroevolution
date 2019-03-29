@@ -1,5 +1,6 @@
 from numpy import array
 import json
+import keras.backend as K
 
 class Trial(object):
 
@@ -34,3 +35,15 @@ class Trial(object):
  
     def __repr__(self):
         return self.__str__()
+    
+def nll(y_true, y_pred):
+    """ Negative log likelihood (Bernoulli). """
+
+    # keras.losses.binary_crossentropy gives the mean
+    # over the last axis. we require the sum
+    return K.sum(K.binary_crossentropy(y_true, y_pred), axis=-1)
+
+
+def safe_log(x, eps=1e-6):
+    """ Prevents :math:`log(0)` by using :math:`log(max(x, eps))`."""
+    return K.log(K.clip(x, eps, 100000000))
