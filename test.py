@@ -1,40 +1,61 @@
-from common import Trial, safe_log, nll
+"""
+2-input XOR example -- this is most likely the simplest possible example.
+"""
 
-import numpy as np
+from common import load_df, df_to_ML_data
+from myneat import LoggingReporter
+from sklearn.metrics import accuracy_score
+import os
 import pickle
+import neat
+import neat_visualization as visualize
+import logging
+import sys
+logging.basicConfig(format='%(asctime)s | %(levelname)s : %(message)s',level=logging.INFO, 
+                    filename='genetic_neat.log', filemode='w+')
 
-def vectorize_generation(list_of_models):
-    generation_vector = []
-    for model in list_of_models:
-        model_vector = []
-        for layer in model:
-            layer_vectorized = np.reshape(layer, newshape=(layer.size))
-            np.reshape(layer_vectorized, newshape=layer.shape)
-            model_vector.extend(layer_vectorized)
-        generation_vector.append(model_vector)
-    return np.array(generation_vector)
 
-def generation_vector_to_models(generation_vector, list_of_old_models):
-    models = []
-    model_idx = 0
-    for old_model in list_of_old_models:
-        start = 0
-        end = 0
-        model = []
-        for old_layer in old_model:
-            end = end + old_layer.size
-            layer_vector = generation_vector[model_idx][start:end]
-            layer = np.reshape(layer_vector, newshape=old_layer.shape)
-            model.append(layer) 
-            start = end
-        models.append(model)
-        model_idx = model_idx + 1
+log = logging.getLogger(__name__)
 
-    return models
+X_train, X_test, y_train, y_test = df_to_ML_data(load_df())
 
-with open('json_weights.pkl', 'rb') as f:
-    json, weights = pickle.load(f)
 
-vector_of_gens = vectorize_generation([weights])
+def eval_genomes(genomes, config):
+    for _, genome in genomes:
+        net = neat.nn.FeedForwardNetwork.create(genome, config)
+        y_pred = [net.activate(Xi) for Xi in X_train]
+        genome.fitness = accuracy_score(y_train, y_pred)
 
-generation = generation_vector_to_models(vector_of_gens, [weights])
+
+def run(config_file):
+    # Load configuration.
+    config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
+                         neat.DefaultSpeciesSet, neat.DefaultStagnation,
+                         config_file)
+
+    # Create the population, which is the top-level object for a NEAT run.
+    p = neat.Population(config)
+
+    # Add a stdout reporter to show progress in the terminal.
+    p.add_reporter(LoggingReporter(True))
+    stats = neat.StatisticsReporter()
+    p.add_reporter(stats)
+    p.add_reporter(neat.Checkpointer(5))
+
+    # Run for up to 300 generations.
+    winner = p.run(eval_genomes, 300)
+
+    # Display the winning genome.
+    log.info('\nBest genome:\n%s', winner)
+
+    node_names = {-1:'A', -2: 'B', 0:'A XOR B'}
+    visualize.draw_net(config, winner, True, node_names=node_names)
+    visualize.plot_stats(stats, ylog=False, view=True)
+    visualize.plot_species(stats, view=True)
+
+    p = neat.Checkpointer.restore_checkpoint('neat-checkpoint-4')
+    p.run(eval_genomes, 10)
+
+
+if __name__ == '__main__':
+    run('genetic_neat.ini')

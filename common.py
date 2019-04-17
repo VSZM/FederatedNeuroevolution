@@ -3,7 +3,11 @@ import json
 import keras
 from keras import metrics
 import keras.backend as K
-from tqdm import tqdm
+try:
+    get_ipython
+    from tqdm import tqdm_notebook as tqdm
+except:
+    from tqdm import tqdm
 from typing import List
 import numpy as np
 import os
@@ -14,7 +18,9 @@ import logging
 import pickle
 from functools import wraps
 from time import time
-
+import datetime
+import matplotlib
+import matplotlib.pyplot
 
 log = logging.getLogger(__name__)
 
@@ -87,9 +93,6 @@ channel_map = {
     'Y': 63
 }
 
-
-
-
 def timed_method(f):
     @wraps(f)
     def wrap(*args, **kw):
@@ -134,6 +137,14 @@ class Trial(object):
     def __repr__(self):
         return self.__str__()
     
+
+def plot_learning(best_of_each_generation, num_generations):
+    matplotlib.pyplot.plot(best_of_each_generation, linewidth=5, color="black")
+    matplotlib.pyplot.xlabel("Iteration", fontsize=20)
+    matplotlib.pyplot.ylabel("Accuracy", fontsize=20)
+    matplotlib.pyplot.xticks(np.arange(0, num_generations + 1, num_generations / 5), fontsize=15)
+    matplotlib.pyplot.yticks(np.arange(0, num_generations + 1, num_generations / 5), fontsize=15)
+
 def nll(y_true, y_pred):
     """ Negative log likelihood (Bernoulli). """
 
@@ -147,7 +158,8 @@ def safe_log(x, eps=1e-6):
     return K.log(K.clip(x, eps, 100000000))
 
 
-
+def ts():
+    return str(datetime.datetime.now()).split(' ')[0]
 
 def read_trials(eeg_file: str) -> List[Trial]:
     errors, zeros = 0, 0
@@ -192,7 +204,7 @@ def read_trials(eeg_file: str) -> List[Trial]:
                 measurements = np.array(measurements)
                 eeg = measurements[:, 2].reshape((64,256))
                 #eeg = np.array([np.mean(eeg_channel.reshape(-1, 4), axis=1) for eeg_channel in eeg[::1]])
-                eeg = (eeg - np.min(eeg))/np.ptp(eeg)
+                #eeg = (eeg - np.min(eeg))/np.ptp(eeg)
                 
 
                 if np.count_nonzero(eeg) == 0:
@@ -229,16 +241,20 @@ def __read_all_trials():
 
 def df_to_ML_data(df):
     X = df['eeg'].values
+    # Zero Mean Unit Variance
     y = df['subject_class'].values
 
     # keras required format
     X = np.rollaxis(np.dstack(X), -1)
     X = X.reshape(X.shape[0], 64, 256, 1)
+    X = (X - X.mean(axis=0)) / X.std(axis=0)
     y = keras.utils.to_categorical(y, 2)
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, shuffle=False)
 
     return X_train, X_test, y_train, y_test
+
+#    return X_train.astype(np.float32), X_test.astype(np.float32), y_train.astype(np.float32), y_test.astype(np.float32)
 
 def load_df():
     if os.path.isfile('df.pkl'):
@@ -256,5 +272,9 @@ def load_df():
         del all_trials
         with open('df.pkl', 'wb') as f:
             pickle.dump(df, f)
+
+    # balancing sample sizes per class
+    df = df.groupby('subject_class')
+    df = df.apply(lambda x: x.sample(df.size().min()).reset_index(drop=True))
 
     return df
