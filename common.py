@@ -251,10 +251,11 @@ def df_to_ML_data(df):
     y = keras.utils.to_categorical(y, 2)
 
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.1, shuffle=False)
+    y_train_argmax = np.argmax(y_train, axis = 1)
+    y_test_argmax = np.argmax(y_test, axis = 1)
 
-    return X_train, X_test, y_train, y_test
 
-#    return X_train.astype(np.float32), X_test.astype(np.float32), y_train.astype(np.float32), y_test.astype(np.float32)
+    return X_train, X_test, y_train, y_test, y_train_argmax, y_test_argmax
 
 def load_df():
     if os.path.isfile('df.pkl'):
@@ -268,7 +269,6 @@ def load_df():
         log.info('Nans: %s', nans)
 
         df = pd.DataFrame.from_records([trial.to_dict() for trial in all_trials])
-        df = df.sample(frac=1).reset_index(drop=True)
         del all_trials
         with open('df.pkl', 'wb') as f:
             pickle.dump(df, f)
@@ -276,5 +276,7 @@ def load_df():
     # balancing sample sizes per class
     df = df.groupby('subject_class')
     df = df.apply(lambda x: x.sample(df.size().min()).reset_index(drop=True))
+    df = df.sample(frac=1).reset_index(drop=True)
+
 
     return df

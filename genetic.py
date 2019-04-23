@@ -1,57 +1,22 @@
 
-
-# based on https://towardsdatascience.com/artificial-neural-networks-optimization-using-genetic-algorithm-with-python-1fe8ed17733e
-# different crossover function: mean
-from common import Trial, safe_log, nll, load_df, df_to_ML_data, timed_method
-
-
-from IPython.core.display import Javascript
-from IPython.display import display
-import os
-os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2' 
-import numpy as np
-import pickle
-import keras
-from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score, accuracy_score
-from keras import backend as K
-from keras.models import model_from_json
 from keras.layers import Dense, Flatten, BatchNormalization, Dropout, Lambda
 from keras.layers import Conv2D, AveragePooling2D
 from keras.models import Sequential
-import keras_metrics
-from keras import metrics
-import tensorflow as tf
-from tqdm import tqdm_notebook as tqdm
-import matplotlib
-import matplotlib.pyplot
+from keras import backend as K
+from sklearn.metrics import accuracy_score, f1_score, mean_squared_error
+import pickle
+from common import safe_log, plot_learning
+import numpy as np
+import os
+
+try:
+    get_ipython
+    from tqdm import tqdm_notebook as tqdm
+except:
+    from tqdm import tqdm
 import logging
-import random
-import sys
-from line_profiler import LineProfiler
-
-logging.basicConfig(format='%(asctime)s | %(levelname)s : %(message)s',level=logging.INFO, 
-                    filename='genetic_learning_weights_only_kernel.log', filemode='a')
-
 
 log = logging.getLogger(__name__)
-
-
-config = tf.ConfigProto()#device_count = {'GPU': 0})
-config.gpu_options.per_process_gpu_memory_fraction = 0.2
-config.gpu_options.allow_growth = True
-keras.backend.tensorflow_backend.set_session(tf.Session(config=config))
-
-
-
-with open('json_weights_bn_simple.pkl', 'rb') as f:
-    model_topology_json, weights = pickle.load(f)
-
-(model_topology_json, weights)
-
-
-
-X_train, X_test, y_train, y_test = df_to_ML_data(load_df())
-
 
 
 def check_weights(a, b):
@@ -66,14 +31,10 @@ def create_model_programatically(weights = None):
     model = Sequential()
     model.add(Conv2D(30, kernel_size=(1, 25),
                      input_shape=input_shape))
-    model.add(BatchNormalization(momentum=0.1))
     model.add(Conv2D(10, kernel_size=(64, 1)))
-    model.add(BatchNormalization(momentum=0.1))
     model.add(Lambda(lambda x: x ** 2))
     model.add(AveragePooling2D(pool_size=(1, 15), strides=(1, 1)))
     model.add(Lambda(lambda x: safe_log(x)))
-    model.add(BatchNormalization(momentum=0.1))
-    #model.add(Dropout(0.5))
     model.add(Conv2D(2, kernel_size=(1, 8), dilation_rate=(15, 1)))
     model.add(BatchNormalization(momentum=0.1))
     model.add(Flatten())
@@ -85,36 +46,39 @@ def create_model_programatically(weights = None):
 
         model.set_weights(weights)
 
-    #model.compile(#loss=keras.losses.categorical_crossentropy,
-              #optimizer=keras.optimizers.SGD(lr=0.01, decay=1e-6, momentum=0.9, nesterov=True),
-     #         metrics=[keras_metrics.binary_f1_score(), metrics.binary_accuracy])
-                        #metrics.binary_accuracy, metrics.cosine_proximity, metrics.mean_absolute_error, 
-                       #metrics.mean_absolute_percentage_error, metrics.mean_squared_error,
-                       #keras_metrics.precision(), keras_metrics.recall(), keras_metrics.binary_f1_score(), 
-                       #keras_metrics.binary_false_negative(), keras_metrics.binary_false_positive(),
-                       #keras_metrics.binary_true_negative(), keras_metrics.binary_true_positive()
-                        #])
-
     
     return model
 
-def individual_fitness(model_topology_json, model_weights, X, y):
-    #keras_model = model_from_json(model_topology_json)
+
+def individual_accuracy(model_weights, X, y):
     keras_model = create_model_programatically(model_weights)
-    try:
-        return mean_absolute_error(y, keras_model.predict(X, batch_size=512))
-    except:
-        return 100
-
-def population_fitness(model_topology_json, population_of_models, X, y):
-    fitness_scores = []
+    y_pred = keras_model.predict_classes(X, batch_size=512)
     
-    for model_weights in population_of_models:#tqdm(population_of_models, desc='Current Population Fitness calculation progress', position=2):
-        fitness_scores.append(individual_fitness(model_topology_json, model_weights, X, y))
-                          
-    return fitness_scores
+    return accuracy_score(y, y_pred)
 
-def fittest_parents_of_generation(population, fitness_scores, num_parents, selector = np.argmin):
+
+def individual_fitness_f1(model_weights, X, y):
+    keras_model = create_model_programatically(model_weights)
+    y_pred = keras_model.predict_classes(X, batch_size=512)
+
+
+    return f1_score(y, y_pred)
+
+def individual_fitness_nmse(model_weights, X, y):
+    keras_model = create_model_programatically(model_weights)
+    y_pred = keras_model.predict(X, batch_size=512)
+
+    try:
+        return -1.0 * mean_squared_error(y, y_pred)
+    except:
+        log.error("Error with mse calculation! Inputs: |%s| and |%s|", y, y_pred, exc_info=True)
+        return -100000
+ 
+def population_fitness(individual_fitness, population_of_models, X, y):
+    return [individual_fitness(model_weights, X, y) for model_weights in population_of_models ]
+                          
+
+def fittest_parents_of_generation(population, fitness_scores, num_parents, selector = np.argmax):
     # Selecting the best individuals in the current generation as parents for producing the offspring of the next generation.
     parents = []
     for _ in range(num_parents - 1):
@@ -149,6 +113,7 @@ def kernelwise_mix(model_a, model_b):
 # Creates offsprings by mixing the layers of the model weights
 def crossover(parent_models, offsprings_size):
     offsprings = []
+    np.random.shuffle(parent_models)
     for k in range(offsprings_size):
         # Index of the first parent to mate.
         parent1_idx = k % len(parent_models)
@@ -170,76 +135,82 @@ def mutation(offsprings, mutation_chance=0.1, mutation_rate=1):
             mutation_indices = mutation_indices.reshape(layer.shape)
                 
             # The random value to be added to the gene.
-            mutation_value = np.random.uniform(-1.0 * mutation_rate, 1.0 * mutation_rate, 1)
-            layer[mutation_indices] += mutation_value
+            mutation_multiplier = np.random.normal(loc=0.0, scale=0.01 * mutation_rate, size=1)
+            layer[mutation_indices] = layer[mutation_indices] + layer[mutation_indices] * mutation_multiplier
         
     return offsprings
 
+def save_state(checkpoint_filename, best_fitness_of_each_generation, best_accuracy_of_each_generation, population_weights):
+    # Saving weights
+    with open(checkpoint_filename + '.checkpoint','wb') as f:
+        pickle.dump((best_fitness_of_each_generation, best_accuracy_of_each_generation, population_weights), f)
 
 
+def initialize_evolution(checkpoint_filename, population_size):
+    if os.path.isfile(checkpoint_filename + '.checkpoint'):
+            log.info('Resuming from previous checkpoint')
+            with open(checkpoint_filename + '.checkpoint', 'rb') as f:
+                best_fitness_of_each_generation, best_accuracy_of_each_generation, population_weights = pickle.load(f)
+    else:
+        log.info('Creating random population')
+        population_weights = []
+        best_fitness_of_each_generation = []
+        best_accuracy_of_each_generation = []
+        for _ in range(0, population_size):
+            population_weights.append(create_model_programatically().get_weights())
 
-def do_stuff():
+        K.clear_session()
 
-    population_size = 20 #sol_per_pop
-    num_parents_mating = 8
-    num_generations = 5
-    mutation_chance = 0.1
-    mutation_rate = 2
-    reference_weights = weights
+    generation_start = len(best_fitness_of_each_generation)
 
-    #Creating the initial population.
-    population_weights = []
-    for _ in range(0, population_size):
-        population_weights.append(create_model_programatically().get_weights())
+    return generation_start, best_fitness_of_each_generation, best_accuracy_of_each_generation, population_weights
+
+def run_evolution(X_train, y_train,y_acc,\
+                    num_parents_mating, num_generations, individual_fitness, generation_start,mutation_chance,mutation_rate,\
+                    best_fitness_of_each_generation, best_accuracy_of_each_generation, population_weights,\
+                    plot_interval, stuck_multiplier, stuck_multiplier_max, save_interval, stuck_evasion_rate, checkpoint_filename):
         
-    K.clear_session()
-
-
-
-    individual_fitness(None, population_weights[2], X_test, y_test)
-    individual_fitness(None, population_weights[3], X_test, y_test)
-
-
-
-    best_of_each_generation = []
-
-    for generation in tqdm(range(num_generations), desc='Generations progress', position=1):
+    for generation in tqdm(range(generation_start, num_generations), desc='Generations progress', position=1):
 
         log.debug('Testing generation |%d| population: |%s|', generation, population_weights)
         # Measuring the fitness of each chromosome in the population.
-        fitness_scores = population_fitness(None, population_weights, X_test, y_test)
-        
-        best_of_this_generation = min(fitness_scores)
-        best_of_each_generation.append(best_of_this_generation)
-        log.info("Best of geration |%d| has accuracy of |%f|", generation, best_of_this_generation)
+        fitness_scores = population_fitness(individual_fitness, population_weights, X_train, y_train)
+
+        best_fitness_of_each_generation.append(max(fitness_scores))
+        best_accuracy_of_each_generation.append(individual_accuracy(population_weights[np.argmax(fitness_scores)], X_train, y_acc))
+        log.info("Best of geration |%d| has accuracy of |%f| and fitness_score of |%f|",\
+                generation, best_accuracy_of_each_generation[generation], best_fitness_of_each_generation[generation])
         log.info('Fitness scores of this generation: |%s|', fitness_scores)
-        
-        
+
+
         # Selecting the best parents in the population for mating.
         parents = fittest_parents_of_generation(population_weights.copy(), fitness_scores, num_parents_mating)
 
         # Generating next generation using crossover.
-        offsprings = crossover(parents, len(population_weights) - num_parents_mating)
+        offsprings = crossover(parents.copy(), len(population_weights) - num_parents_mating)
 
+        stuck_multiplier_value = max(stuck_multiplier, stuck_multiplier_max)
         # Adding some variations to the offsrping using mutation.
-        offsprings = mutation(offsprings, mutation_chance=mutation_chance, mutation_rate=mutation_rate)
+        offsprings = mutation(offsprings, mutation_chance=mutation_chance * np.sqrt(stuck_multiplier_value), mutation_rate=mutation_rate * stuck_multiplier_value)
 
         # Creating the new generation based on the parents and offspring.
         population_weights = []
         population_weights.extend(parents)
         population_weights.extend(offsprings)
 
+        # If our accuracy is not increasing we try and speed up mutation 
+        if generation > 0 and best_accuracy_of_each_generation[generation] == best_accuracy_of_each_generation[generation-1]:
+            stuck_multiplier *= stuck_evasion_rate
+            log.info('Stuck at local maximum, expanding mutation rate and chance by stuck multiplier of |%f|', stuck_multiplier)
+        else:
+            stuck_multiplier = 1
+
+        if generation % plot_interval == 0:
+            plot_learning(best_accuracy_of_each_generation, num_generations)
+
+
+        if generation % save_interval == 0 or generation + 1 == num_generations:
+            save_state(checkpoint_filename, best_fitness_of_each_generation, best_accuracy_of_each_generation, population_weights)
+
         #cleanup resources
         K.clear_session()
-        
-
-
-
-
-lp = LineProfiler()
-lp.add_function(population_fitness)
-lp.add_function(individual_fitness)
-lp.add_function(create_model_programatically)
-lp_wrapper = lp(do_stuff)
-lp_wrapper()
-lp.print_stats()
