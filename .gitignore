@@ -3,3 +3,8 @@
 __pycache__/
 eeg_full/
 *.pkl
+*.log
+logs/
+logs_shallow/
+logs_simple/
+*.checkpoint
