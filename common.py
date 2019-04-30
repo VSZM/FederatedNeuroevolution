@@ -138,12 +138,12 @@ class Trial(object):
         return self.__str__()
     
 
-def plot_learning(best_of_each_generation, num_generations):
-    matplotlib.pyplot.plot(best_of_each_generation, linewidth=5, color="black")
-    matplotlib.pyplot.xlabel("Iteration", fontsize=20)
-    matplotlib.pyplot.ylabel("Accuracy", fontsize=20)
-    matplotlib.pyplot.xticks(np.arange(0, num_generations + 1, num_generations / 5), fontsize=15)
-    matplotlib.pyplot.yticks(np.arange(0, num_generations + 1, num_generations / 5), fontsize=15)
+def plot_learning(fitness, accuracy):
+    matplotlib.pyplot.plot(fitness)
+    matplotlib.pyplot.plot(accuracy)
+    matplotlib.pyplot.legend(['fitness', 'accuracy'])
+    matplotlib.pyplot.xlabel("Generation", fontsize=20)
+    matplotlib.pyplot.ylabel("Best of the pool", fontsize=20)
 
 def nll(y_true, y_pred):
     """ Negative log likelihood (Bernoulli). """
