@@ -5,10 +5,12 @@ from keras.models import Sequential
 from keras import backend as K
 from sklearn.metrics import accuracy_score, f1_score, mean_squared_error
 import pickle
-from common import safe_log, plot_learning
+from common import safe_log, plot_learning, cycling_window
 from node import Node
 import numpy as np
 import os
+
+
 
 
 try:
@@ -74,6 +76,19 @@ def individual_fitness_nmse(keras_model, X, y):
         log.error("Error with mse calculation! Inputs: |%s| and |%s|", y, y_pred, exc_info=True)
         return -100000
 
+
+# Based on nodes. For each node evaluate all the models
+#@profile
+def federated_population_fitness_single_node_singe_item(nodes, individual_fitness, population_of_models):
+    node_stimuli = np.random.uniform(0, 1, len(nodes))
+    
+    keras_models = [create_model_programatically(model) for model in population_of_models]
+    reachable_nodes = [nodes[np.argmax(node_stimuli)]]
+    weights_and_scores = np.array([node.evaluate_multiple_models_random_item(keras_models, individual_fitness)\
+                            for node in tqdm(reachable_nodes, desc='Fitness progress', position=2)]).transpose()
+
+    return weights_and_scores[1][0]
+
 #@profile
 def fitness_of_model_for_nodes(nodes, model_weights, individual_fitness):
     keras_model = create_model_programatically(model_weights)
@@ -81,17 +96,6 @@ def fitness_of_model_for_nodes(nodes, model_weights, individual_fitness):
 
     return np.average(weights_and_scores[1], weights=weights_and_scores[0], axis = 0)
 
-# Based on nodes. For each node evaluate all the models
-#@profile
-def federated_population_fitness_node_based(nodes, individual_fitness, population_of_models):
-    node_stimuli = np.random.uniform(0, 1, len(nodes))
-    
-    keras_models = [create_model_programatically(model) for model in population_of_models]
-    reachable_nodes = [node for node, stimuli in zip(nodes, node_stimuli) if node.is_reachable(stimuli)]
-    weights_and_scores = [node.evaluate_multiple_models(keras_models, individual_fitness) for node in tqdm(reachable_nodes, desc='Fitness progress', position=2)]
-    weights_and_scores = list(zip(*weights_and_scores))
-
-    return np.average(weights_and_scores[1], weights=weights_and_scores[0], axis = 0).tolist()
 
 # Based on models. For each model get the fitness from all nodes. THIS IS FASTER
 #@profile
@@ -239,8 +243,9 @@ def run_federated_evolution(node_count, node_activation_chance, X_train, y_train
         # Generating next generation using crossover.
         offsprings = crossover(parents.copy(), len(population_weights) - num_parents_mating)
 
+        stuck_multiplier_value = max(stuck_multiplier, stuck_multiplier_max)
         # Adding some variations to the offsrping using mutation.
-        offsprings = mutation(offsprings, mutation_chance=mutation_chance, mutation_rate=mutation_rate)
+        offsprings = mutation(offsprings, mutation_chance=mutation_chance * np.sqrt(stuck_multiplier_value), mutation_rate=mutation_rate * stuck_multiplier_value)
 
         # Creating the new generation based on the parents and offspring.
         population_weights = []

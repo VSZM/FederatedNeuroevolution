@@ -30,6 +30,14 @@ class Node:
     def evaluate_multiple_models(self, models, individual_fitness):
         return len(self.y), [individual_fitness(model, self.X, self.y) for model in models]
 
+    def evaluate_multiple_models_random_item(self, models, individual_fitness):
+        idx = np.random.choice(range(len(self.y)))
+        X_new_shape = (1,) + self.X.shape[1:]
+        y_new_shape = (1,) + self.y.shape[1:]
+        X1 = np.array(self.X[idx]).reshape(X_new_shape)
+        y1 = np.array(self.y[idx]).reshape(y_new_shape)
+        return 1, [individual_fitness(model, X1, y1) for model in models]
+
     def __eq__(self, other):
             if other == None:
                 return False
