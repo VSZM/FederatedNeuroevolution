@@ -73,6 +73,16 @@ if __name__ == "__main__":
                         generation_start,mutation_chance,mutation_rate,\
                         best_fitness_of_each_generation, best_accuracy_of_each_generation, best_model_of_each_generation, population_weights,\
                         plot_interval, stuck_multiplier, stuck_multiplier_max, save_interval, stuck_evasion_rate, __file__)
+    run_federated_evolution(node_count=node_count, node_activation_chance=node_activation_chance, node_alternative_iterator=cycling_window_n,\
+                        X_train=X_train, y_train=y_train, X_validate=X_test, y_validate=y_test,\
+                        num_parents_mating=num_parents_mating, num_generations=num_generations,\
+                        federated_population_fitness=federated_population_fitness, individual_fitness=individual_fitness,\
+                        generation_start=generation_start, mutation_chance=mutation_chance, mutation_rate=mutation_rate,\
+                        best_fitness_of_each_generation=best_fitness_of_each_generation, best_accuracy_of_each_generation=best_accuracy_of_each_generation,\
+                        best_model_of_each_generation=best_model_of_each_generation, population_weights=population_weights,\
+                        plot_interval=plot_interval, stuck_multiplier=stuck_multiplier, stuck_multiplier_max=stuck_multiplier_max,\
+                        save_interval=save_interval, stuck_evasion_rate=stuck_evasion_rate, stuck_check_length=stuck_check_length,\
+                        checkpoint_filename=__file__)
 
 
 
