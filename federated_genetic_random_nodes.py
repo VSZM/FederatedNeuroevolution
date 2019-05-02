@@ -51,6 +51,7 @@ if __name__ == "__main__":
     stuck_multiplier = 1
     stuck_evasion_rate = 1.25
     stuck_multiplier_max = 5
+    stuck_check_length = 3
     save_interval = 5
     plot_interval = 15
     federated_population_fitness = federated_population_fitness_model_based
@@ -63,16 +64,16 @@ if __name__ == "__main__":
         population_weights = initialize_evolution(__file__, population_size)
 
 
-#run_federated_evolution(node_count, node_activation_chance, X_train, y_train, X_validate, y_validate,\
-#                    num_parents_mating, num_generations, federated_population_fitness, individual_fitness,\
-#                    generation_start,mutation_chance,mutation_rate,\
-#                    best_fitness_of_each_generation, best_accuracy_of_each_generation, best_model_of_each_generation, population_weights,\
-#                    plot_interval, save_interval, checkpoint_filename)
-    run_federated_evolution(node_count, node_activation_chance, X_train, y_train, X_test, y_test,\
-                        num_parents_mating, num_generations, federated_population_fitness, individual_fitness,\
-                        generation_start,mutation_chance,mutation_rate,\
-                        best_fitness_of_each_generation, best_accuracy_of_each_generation, best_model_of_each_generation, population_weights,\
-                        plot_interval, stuck_multiplier, stuck_multiplier_max, save_interval, stuck_evasion_rate, __file__)
+    run_federated_evolution(node_count=node_count, node_activation_chance=node_activation_chance, node_alternative_iterator=None,\
+                        X_train=X_train, y_train=y_train, X_validate=X_test, y_validate=y_test,\
+                        num_parents_mating=num_parents_mating, num_generations=num_generations,\
+                        federated_population_fitness=federated_population_fitness, individual_fitness=individual_fitness,\
+                        generation_start=generation_start, mutation_chance=mutation_chance, mutation_rate=mutation_rate,\
+                        best_fitness_of_each_generation=best_fitness_of_each_generation, best_accuracy_of_each_generation=best_accuracy_of_each_generation,\
+                        best_model_of_each_generation=best_model_of_each_generation, population_weights=population_weights,\
+                        plot_interval=plot_interval, stuck_multiplier=stuck_multiplier, stuck_multiplier_max=stuck_multiplier_max,\
+                        save_interval=save_interval, stuck_evasion_rate=stuck_evasion_rate, stuck_check_length=stuck_check_length,\
+                        checkpoint_filename=__file__)
 
 
 

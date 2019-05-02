@@ -9,18 +9,22 @@ from common import safe_log, plot_learning, cycling_window
 from node import Node
 import numpy as np
 import os
+from more_itertools import peekable
+import collections
+import logging
 
-
+log = logging.getLogger(__name__)
 
 
 try:
     get_ipython
     from tqdm import tqdm_notebook as tqdm
+    log.debug('Using tqdm notebook version')
 except:
     from tqdm import tqdm
-import logging
+    log.debug('Using tqdm console version')
 
-log = logging.getLogger(__name__)
+
 
 def check_weights(a, b):
     assert len(a) == len(b)
@@ -28,6 +32,8 @@ def check_weights(a, b):
         assert a[i].shape ==  b[i].shape
 
 def create_model_programatically(weights = None):
+    K.clear_session()
+
     input_shape = (64, 256, 1)
     num_classes = 2
     
@@ -77,7 +83,7 @@ def individual_fitness_nmse(keras_model, X, y):
         return -100000
 
 
-# Based on nodes. For each node evaluate all the models
+# Randomly select a node which runs the evaluation on a random data item
 #@profile
 def federated_population_fitness_single_node_singe_item(nodes, individual_fitness, population_of_models):
     node_stimuli = np.random.uniform(0, 1, len(nodes))
@@ -96,15 +102,21 @@ def fitness_of_model_for_nodes(nodes, model_weights, individual_fitness):
 
     return np.average(weights_and_scores[1], weights=weights_and_scores[0], axis = 0)
 
+def federated_population_fitness_model_based_all_nodes(nodes, individual_fitness, population_of_models):
+    return federated_population_fitness_model_based(nodes, individual_fitness, population_of_models, 1, 1)
 
-# Based on models. For each model get the fitness from all nodes. THIS IS FASTER
+# Based on models. For each model get the fitness from randomly selected nodes. 
 #@profile
-def federated_population_fitness_model_based(nodes, individual_fitness, population_of_models):
-    node_stimuli = np.random.uniform(0, 1, len(nodes))
+def federated_population_fitness_model_based(nodes, individual_fitness, population_of_models, min_stimuli = 0, max_stimuli = 1):
+    if isinstance(nodes, collections.Iterator):
+        nodes = next(nodes)
+    
+    node_stimuli = np.random.uniform(min_stimuli, max_stimuli, len(nodes))
     
     #weights_and_scores = [node.evaluate(keras_models, individual_fitness) for node, stimuli in zip(nodes, node_stimuli) if node.is_reachable(stimuli)]
     reachable_nodes = [node for node, stimuli in zip(nodes, node_stimuli) if node.is_reachable(stimuli)]
-    fitness_scores = [fitness_of_model_for_nodes(reachable_nodes, model, individual_fitness) for model in tqdm(population_of_models, desc='Fitness progress', position=2)]
+    fitness_scores = [fitness_of_model_for_nodes(reachable_nodes, model, individual_fitness) for model in\
+                        tqdm(population_of_models, desc='Fitness progress', position=2)]
 
     return fitness_scores
 
@@ -207,11 +219,11 @@ def initialize_evolution(checkpoint_filename, population_size):
 
 
 #@profile
-def run_federated_evolution(node_count, node_activation_chance, X_train, y_train, X_validate, y_validate,\
+def run_federated_evolution(*, node_count, node_activation_chance, node_alternative_iterator, X_train, y_train, X_validate, y_validate,\
                     num_parents_mating, num_generations, federated_population_fitness, individual_fitness,\
                     generation_start,mutation_chance,mutation_rate,\
                     best_fitness_of_each_generation, best_accuracy_of_each_generation, best_model_of_each_generation, population_weights,\
-                    plot_interval, stuck_multiplier, stuck_multiplier_max, save_interval, stuck_evasion_rate, checkpoint_filename):
+                    plot_interval, stuck_multiplier, stuck_multiplier_max, save_interval, stuck_evasion_rate, stuck_check_length, checkpoint_filename):
 
     log.info('Splitting the training data (size |%d|) into |%d| node data', len(y_train), node_count)
     split_indices = np.append([0, len(X_train)], np.random.choice(range(1, len(X_train)), node_count - 1, replace=False))
@@ -220,6 +232,9 @@ def run_federated_evolution(node_count, node_activation_chance, X_train, y_train
     y_validate_argmax = np.argmax(y_validate, axis = 1)
     for node in nodes:
         log.info(node)
+
+    if node_alternative_iterator is not None:
+        nodes = node_alternative_iterator(nodes)
 
     for generation in tqdm(range(generation_start, num_generations), desc='Evolution progress', position=1):
 
@@ -254,7 +269,7 @@ def run_federated_evolution(node_count, node_activation_chance, X_train, y_train
 
         
         # If our accuracy is not increasing we try and speed up mutation 
-        if generation > 0 and best_accuracy_of_each_generation[generation] == best_accuracy_of_each_generation[generation-1]:
+        if generation > 0 and best_accuracy_of_each_generation[generation] in best_accuracy_of_each_generation[generation-stuck_check_length:generation]:
             stuck_multiplier *= stuck_evasion_rate
             log.info('Stuck at local maximum, expanding mutation rate and chance by stuck multiplier of |%f|', stuck_multiplier)
         else:
@@ -274,10 +289,10 @@ def run_federated_evolution(node_count, node_activation_chance, X_train, y_train
     
 
 
-def run_evolution(X_train, y_train,y_acc,\
+def run_evolution(*, X_train, y_train,y_acc,\
                     num_parents_mating, num_generations, population_fitness, individual_fitness, generation_start,mutation_chance,mutation_rate,\
                     best_fitness_of_each_generation, best_accuracy_of_each_generation, best_model_of_each_generation, population_weights,\
-                    plot_interval, stuck_multiplier, stuck_multiplier_max, save_interval, stuck_evasion_rate, checkpoint_filename):
+                    plot_interval, stuck_multiplier, stuck_multiplier_max, save_interval, stuck_evasion_rate, stuck_check_length, checkpoint_filename):
         
     for generation in tqdm(range(generation_start, num_generations), desc='Generations progress', position=1):
 
@@ -310,7 +325,7 @@ def run_evolution(X_train, y_train,y_acc,\
         population_weights.extend(offsprings)
 
         # If our accuracy is not increasing we try and speed up mutation 
-        if generation > 0 and best_accuracy_of_each_generation[generation] == best_accuracy_of_each_generation[generation-1]:
+        if generation > 0 and best_accuracy_of_each_generation[generation] in best_accuracy_of_each_generation[generation-stuck_check_length:]:
             stuck_multiplier *= stuck_evasion_rate
             log.info('Stuck at local maximum, expanding mutation rate and chance by stuck multiplier of |%f|', stuck_multiplier)
         else:

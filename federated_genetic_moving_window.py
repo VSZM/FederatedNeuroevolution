@@ -1,9 +1,9 @@
 
 # based on https://towardsdatascience.com/artificial-neural-networks-optimization-using-genetic-algorithm-with-python-1fe8ed17733e
 # different crossover function: mean
-from common import load_df, df_to_ML_data, timed_method, ts
+from common import load_df, df_to_ML_data, timed_method, ts, cycling_window
 from genetic import run_federated_evolution, individual_fitness_f1, initialize_evolution, individual_fitness_nmse
-from genetic import federated_population_fitness_model_based, federated_population_fitness_single_node_singe_item
+from genetic import federated_population_fitness_model_based_all_nodes
 
 
 from IPython.core.display import Javascript
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     node_activation_chance = 0.15
     population_size = 50
     num_parents_mating = 8
-    num_generations = 500
+    num_generations = 5000
     mutation_chance = 0.01
     mutation_rate = 3
     stuck_multiplier = 1
@@ -53,9 +53,10 @@ if __name__ == "__main__":
     stuck_multiplier_max = 5
     stuck_check_length = 3
     save_interval = 1
-    plot_interval = 15
-    federated_population_fitness = federated_population_fitness_single_node_singe_item
+    plot_interval = 6000
+    federated_population_fitness = federated_population_fitness_model_based_all_nodes
     individual_fitness = individual_fitness_nmse
+    cycling_window_n = lambda seq: cycling_window(seq, int(np.rint(node_count * node_activation_chance)))
 
 
 
@@ -64,7 +65,7 @@ if __name__ == "__main__":
         population_weights = initialize_evolution(__file__, population_size)
 
 
-    run_federated_evolution(node_count=node_count, node_activation_chance=node_activation_chance, node_alternative_iterator=None,\
+    run_federated_evolution(node_count=node_count, node_activation_chance=node_activation_chance, node_alternative_iterator=cycling_window_n,\
                         X_train=X_train, y_train=y_train, X_validate=X_test, y_validate=y_test,\
                         num_parents_mating=num_parents_mating, num_generations=num_generations,\
                         federated_population_fitness=federated_population_fitness, individual_fitness=individual_fitness,\

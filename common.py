@@ -21,6 +21,8 @@ from time import time
 import datetime
 import matplotlib
 import matplotlib.pyplot
+from itertools import cycle
+from itertools import islice
 
 log = logging.getLogger(__name__)
 
@@ -280,3 +282,14 @@ def load_df():
 
 
     return df
+
+
+#https://stackoverflow.com/a/6822773/1564252
+def cycling_window(seq, window_size):
+    it = cycle(seq)
+    result = tuple(islice(it, window_size))
+    if len(result) == window_size:
+        yield result
+    for elem in it:
+        result = result[1:] + (elem,)
+        yield result
