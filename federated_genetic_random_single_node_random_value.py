@@ -3,7 +3,8 @@
 # different crossover function: mean
 from common import load_df, df_to_ML_data, timed_method, ts
 from genetic import run_federated_evolution, individual_fitness_f1, initialize_evolution, individual_fitness_nmse
-from genetic import federated_population_fitness_model_based, federated_population_fitness_single_node_singe_item
+from genetic import federated_population_fitness_model_based
+from node import NodeIteratorRandomSingleNodeSingleElement
 
 
 from IPython.core.display import Javascript
@@ -40,32 +41,31 @@ if __name__ == "__main__":
     X_train, X_test, y_train, y_test, y_train_argmax, y_test_argmax = df_to_ML_data(load_df())
 
 
-
-    node_count = 80
-    node_activation_chance = 0.15
+    node_subset_change_interval = 3
     population_size = 50
     num_parents_mating = 8
-    num_generations = 500
+    num_generations = 5000
     mutation_chance = 0.01
     mutation_rate = 3
     stuck_multiplier = 1
     stuck_evasion_rate = 1.25
     stuck_multiplier_max = 5
-    stuck_check_length = 3
-    save_interval = 1
-    plot_interval = 15
-    federated_population_fitness = federated_population_fitness_single_node_singe_item
+    stuck_check_length = 30
+    save_interval = 5
+    plot_interval = 150000
+    federated_population_fitness = federated_population_fitness_model_based
     individual_fitness = individual_fitness_nmse
-
 
 
 
     generation_start, best_fitness_of_each_generation, best_accuracy_of_each_generation, best_model_of_each_generation,\
         population_weights = initialize_evolution(__file__, population_size)
 
+    nodes_iterator = NodeIteratorRandomSingleNodeSingleElement(X_train, y_train, node_subset_change_interval)
 
-    run_federated_evolution(node_count=node_count, node_activation_chance=node_activation_chance, node_alternative_iterator=None,\
-                        X_train=X_train, y_train=y_train, X_validate=X_test, y_validate=y_test,\
+
+    run_federated_evolution(nodes_iterator=nodes_iterator,\
+                        X_validate=X_test, y_validate=y_test,\
                         num_parents_mating=num_parents_mating, num_generations=num_generations,\
                         federated_population_fitness=federated_population_fitness, individual_fitness=individual_fitness,\
                         generation_start=generation_start, mutation_chance=mutation_chance, mutation_rate=mutation_rate,\
@@ -74,7 +74,6 @@ if __name__ == "__main__":
                         plot_interval=plot_interval, stuck_multiplier=stuck_multiplier, stuck_multiplier_max=stuck_multiplier_max,\
                         save_interval=save_interval, stuck_evasion_rate=stuck_evasion_rate, stuck_check_length=stuck_check_length,\
                         checkpoint_filename=__file__)
-
 
 
 

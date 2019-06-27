@@ -4,24 +4,24 @@
 
 ##
 import numpy as np
+import logging
+from abc import ABC, abstractmethod
+from common import cycling_window
 
+log = logging.getLogger(__name__)
 
 
 class Node:
 
     _id = 1
 
-    def __init__(self, id, X, y, reachability_treshold):
+    def __init__(self, id, X, y):
         if id == None:
             id = Node._id
             Node._id += 1
         self.id = id
         self.X = X
         self.y = y
-        self.reachability_treshold = reachability_treshold
-
-    def is_reachable(self, stimuli):
-        return stimuli > self.reachability_treshold
 
     def evaluate_model(self, model, individual_fitness):
         return len(self.y), individual_fitness(model, self.X, self.y)
@@ -29,14 +29,6 @@ class Node:
 
     def evaluate_multiple_models(self, models, individual_fitness):
         return len(self.y), [individual_fitness(model, self.X, self.y) for model in models]
-
-    def evaluate_multiple_models_random_item(self, models, individual_fitness):
-        idx = np.random.choice(range(len(self.y)))
-        X_new_shape = (1,) + self.X.shape[1:]
-        y_new_shape = (1,) + self.y.shape[1:]
-        X1 = np.array(self.X[idx]).reshape(X_new_shape)
-        y1 = np.array(self.y[idx]).reshape(y_new_shape)
-        return 1, [individual_fitness(model, X1, y1) for model in models]
 
     def __eq__(self, other):
             if other == None:
@@ -64,3 +56,91 @@ class Node:
 
 
 
+class NodeIteratorBase(ABC):
+
+    def __init__(self, X, y, change_interval):
+        self.change_interval = change_interval
+        self.nodes = NodeIteratorBase.split_nodes(X, y)
+        self._access_nr = 0
+        self.current_subset = []
+
+    @staticmethod
+    def split_nodes(X, y):
+        """
+            We will split the data into 1 order of magnitude less nodes than the actual length of data.
+            This ensures the 'Massively Distributed' federated property.
+        """
+        node_count = int(len(y) / 10) 
+        log.info('Splitting |%d| data into |%d| nodes', len(y), node_count)
+        split_indices = np.append([0, len(X)], np.random.choice(range(1, len(X)), node_count - 1, replace=False))
+        split_indices.sort()
+        nodes = [Node(None, X[start:end], y[start:end]) for start, end in zip(split_indices[:-1], split_indices[1:])]
+        for node in nodes:
+            log.info(node)
+
+        return nodes
+
+    @abstractmethod
+    def update(self):
+        pass
+
+    def __iter__(self):
+        while(True):
+            yield self.__next__()
+
+    def __next__(self):
+        if self._access_nr % self.change_interval == 0:
+            self.update()
+
+        self._access_nr += 1
+
+        return self.current_subset
+
+
+class NodeIteratorRandomSingleNodeSingleElement(NodeIteratorBase):
+
+    def __init__(self, X, y, change_interval):
+        super().__init__(X, y, change_interval)
+
+
+    def update(self):
+        """
+            Choosing a random node and from that node chose a random sample.
+            Create a list of the new single element node. 
+        """
+        node = np.random.choice(self.nodes)
+
+        idx = np.random.choice(range(len(node.y)))
+        X_new_shape = (1,) + node.X.shape[1:]
+        y_new_shape = (1,) + node.y.shape[1:]
+        X1 = np.array(node.X[idx]).reshape(X_new_shape)
+        y1 = np.array(node.y[idx]).reshape(y_new_shape)
+        self.current_subset = [Node(None, X1, y1)]
+
+
+class NodeIteratorRandomSubset(NodeIteratorBase):
+
+    def __init__(self, X, y, change_interval, subset_ratio):
+        super().__init__(X, y, change_interval)
+        self.subset_ratio = subset_ratio
+
+
+    def update(self):
+        """
+            Choosing a random set of nodes.
+        """
+        self.current_subset = np.random.choice(self.nodes, int(len(self.nodes) * self.subset_ratio))
+
+class NodeIteratorMovingWindow(NodeIteratorBase):
+
+
+    def __init__(self, X, y, change_interval, window_ratio):
+        super().__init__(X, y, change_interval)
+        self.cycling_window = cycling_window(self.nodes, int(len(self.nodes) * window_ratio))
+
+
+    def update(self):
+        """
+            Cycle through the list of nodes with a moving window.
+        """
+        self.current_subset = next(self.cycling_window)

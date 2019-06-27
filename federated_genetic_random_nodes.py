@@ -3,7 +3,8 @@
 # different crossover function: mean
 from common import load_df, df_to_ML_data, timed_method, ts
 from genetic import run_federated_evolution, individual_fitness_f1, initialize_evolution, individual_fitness_nmse
-from genetic import federated_population_fitness_model_based, save_state
+from genetic import federated_population_fitness_model_based, save_state, save_nodes
+from node import NodeIteratorRandomSubset
 
 
 from IPython.core.display import Javascript
@@ -41,17 +42,18 @@ if __name__ == "__main__":
 
 
 
-    node_count = 80
-    node_activation_chance = 0.15
+
+    node_activation_ratio = 0.10
+    node_subset_change_interval = 10
     population_size = 50
     num_parents_mating = 8
-    num_generations = 500
+    num_generations = 5000
     mutation_chance = 0.01
     mutation_rate = 3
     stuck_multiplier = 1
     stuck_evasion_rate = 1.25
     stuck_multiplier_max = 5
-    stuck_check_length = 3
+    stuck_check_length = 30
     save_interval = 5
     plot_interval = 15
     federated_population_fitness = federated_population_fitness_model_based
@@ -60,12 +62,19 @@ if __name__ == "__main__":
 
 
 
+
     generation_start, best_fitness_of_each_generation, best_accuracy_of_each_generation, best_model_of_each_generation,\
         population_weights = initialize_evolution(__file__, population_size)
 
+    nodes_iterator = NodeIteratorRandomSubset(X_train, y_train, node_subset_change_interval, node_activation_ratio)
 
-    run_federated_evolution(node_count=node_count, node_activation_chance=node_activation_chance, node_alternative_iterator=None,\
-                        X_train=X_train, y_train=y_train, X_validate=X_test, y_validate=y_test,\
+    with open(__file__ + '.nodes', 'rb') as f:
+        nodes = pickle.load(f)
+        nodes_iterator = nodes
+
+
+    run_federated_evolution(nodes_iterator=nodes_iterator,\
+                        X_validate=X_test, y_validate=y_test,\
                         num_parents_mating=num_parents_mating, num_generations=num_generations,\
                         federated_population_fitness=federated_population_fitness, individual_fitness=individual_fitness,\
                         generation_start=generation_start, mutation_chance=mutation_chance, mutation_rate=mutation_rate,\

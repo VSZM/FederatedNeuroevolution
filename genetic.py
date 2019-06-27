@@ -83,18 +83,6 @@ def individual_fitness_nmse(keras_model, X, y):
         return -100000
 
 
-# Randomly select a node which runs the evaluation on a random data item
-#@profile
-def federated_population_fitness_single_node_singe_item(nodes, individual_fitness, population_of_models):
-    node_stimuli = np.random.uniform(0, 1, len(nodes))
-    
-    keras_models = [create_model_programatically(model) for model in population_of_models]
-    reachable_nodes = [nodes[np.argmax(node_stimuli)]]
-    weights_and_scores = np.array([node.evaluate_multiple_models_random_item(keras_models, individual_fitness)\
-                            for node in tqdm(reachable_nodes, desc='Fitness progress', position=2)]).transpose()
-
-    return weights_and_scores[1][0]
-
 #@profile
 def fitness_of_model_for_nodes(nodes, model_weights, individual_fitness):
     keras_model = create_model_programatically(model_weights)
@@ -102,20 +90,11 @@ def fitness_of_model_for_nodes(nodes, model_weights, individual_fitness):
 
     return np.average(weights_and_scores[1], weights=weights_and_scores[0], axis = 0)
 
-def federated_population_fitness_model_based_all_nodes(nodes, individual_fitness, population_of_models):
-    return federated_population_fitness_model_based(nodes, individual_fitness, population_of_models, 1, 1)
 
-# Based on models. For each model get the fitness from randomly selected nodes. 
+# Iteration is based on models because of massive overhead of keras model creation. 
 #@profile
-def federated_population_fitness_model_based(nodes, individual_fitness, population_of_models, min_stimuli = 0, max_stimuli = 1):
-    if isinstance(nodes, collections.Iterator):
-        nodes = next(nodes)
-    
-    node_stimuli = np.random.uniform(min_stimuli, max_stimuli, len(nodes))
-    
-    #weights_and_scores = [node.evaluate(keras_models, individual_fitness) for node, stimuli in zip(nodes, node_stimuli) if node.is_reachable(stimuli)]
-    reachable_nodes = [node for node, stimuli in zip(nodes, node_stimuli) if node.is_reachable(stimuli)]
-    fitness_scores = [fitness_of_model_for_nodes(reachable_nodes, model, individual_fitness) for model in\
+def federated_population_fitness_model_based(nodes, individual_fitness, population_of_models):
+    fitness_scores = [fitness_of_model_for_nodes(nodes, model, individual_fitness) for model in\
                         tqdm(population_of_models, desc='Fitness progress', position=2)]
 
     return fitness_scores
@@ -191,11 +170,15 @@ def mutation(offsprings, mutation_chance=0.1, mutation_rate=1):
     return offsprings
 
 #@profile
-def save_state(checkpoint_filename, best_fitness_of_each_generation, best_accuracy_of_each_generation, best_model_of_each_generation, population_weights):
+def save_state(checkpoint_filename, best_fitness_of_each_generation, best_accuracy_of_each_generation,\
+                best_model_of_each_generation, population_weights):
     # Saving weights
     with open(checkpoint_filename + '.checkpoint','wb') as f:
         pickle.dump((best_fitness_of_each_generation, best_accuracy_of_each_generation, best_model_of_each_generation, population_weights), f)
 
+def save_nodes(checkpoint_filename, nodes):
+    with open(checkpoint_filename + '.nodes', 'wb') as f:
+        pickle.dump(nodes, f)
 
 def initialize_evolution(checkpoint_filename, population_size):
     if os.path.isfile(checkpoint_filename + '.checkpoint'):
@@ -219,29 +202,22 @@ def initialize_evolution(checkpoint_filename, population_size):
 
 
 #@profile
-def run_federated_evolution(*, node_count, node_activation_chance, node_alternative_iterator, X_train, y_train, X_validate, y_validate,\
+def run_federated_evolution(*, nodes_iterator, X_validate, y_validate,\
                     num_parents_mating, num_generations, federated_population_fitness, individual_fitness,\
                     generation_start,mutation_chance,mutation_rate,\
                     best_fitness_of_each_generation, best_accuracy_of_each_generation, best_model_of_each_generation, population_weights,\
                     plot_interval, stuck_multiplier, stuck_multiplier_max, save_interval, stuck_evasion_rate, stuck_check_length, checkpoint_filename):
 
-    log.info('Splitting the training data (size |%d|) into |%d| node data', len(y_train), node_count)
-    split_indices = np.append([0, len(X_train)], np.random.choice(range(1, len(X_train)), node_count - 1, replace=False))
-    split_indices.sort()
-    nodes = [Node(None, X_train[start:end], y_train[start:end], 1 - node_activation_chance) for start, end in zip(split_indices[:-1], split_indices[1:])]
     y_validate_argmax = np.argmax(y_validate, axis = 1)
-    for node in nodes:
-        log.info(node)
+    save_nodes(checkpoint_filename, nodes_iterator.nodes)
 
-    if node_alternative_iterator is not None:
-        nodes = node_alternative_iterator(nodes)
 
     for generation in tqdm(range(generation_start, num_generations), desc='Evolution progress', position=1):
 
         log.info('Testing generation |%d|', generation)
         log.debug('Population: |%s|', population_weights)
         # Measuring the fitness of each individual in the population.
-        fitness_scores = federated_population_fitness(nodes, individual_fitness, population_weights)
+        fitness_scores = federated_population_fitness(next(nodes_iterator), individual_fitness, population_weights)
         log.info('Fitness scores of this generation: |%s|', fitness_scores)
 
         best_fitness_of_each_generation.append(max(fitness_scores))
@@ -258,7 +234,7 @@ def run_federated_evolution(*, node_count, node_activation_chance, node_alternat
         # Generating next generation using crossover.
         offsprings = crossover(parents.copy(), len(population_weights) - num_parents_mating)
 
-        stuck_multiplier_value = max(stuck_multiplier, stuck_multiplier_max)
+        stuck_multiplier_value = min(stuck_multiplier, stuck_multiplier_max)
         # Adding some variations to the offsrping using mutation.
         offsprings = mutation(offsprings, mutation_chance=mutation_chance * np.sqrt(stuck_multiplier_value), mutation_rate=mutation_rate * stuck_multiplier_value)
 
